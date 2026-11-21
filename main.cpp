@@ -16,7 +16,7 @@ public:
 	{
 		fGame = new GameView();
 		AddChild(fGame);
-		// 20 ms ~ 50 fps: mượt hơn cho hiệu ứng/phản lực.
+		// 20 ms ~ 50 fps: mÆ°á»£t hÆ¡n cho hiá»‡u á»©ng/pháº£n lá»±c.
 		fRunner = new BMessageRunner(BMessenger(fGame),
 			new BMessage(MSG_FRAME), 20000);
 	}
@@ -28,7 +28,7 @@ private:
 
 class NovaAssaultApp : public BApplication {
 public:
-	// v3: tránh đụng entry registrar cũ trỏ tới /boot/trash/NovaAssault
+	// v3: trÃ¡nh Ä‘á»¥ng entry registrar cÅ© trá» tá»›i /boot/trash/NovaAssault
 	NovaAssaultApp() : BApplication("application/x-vnd.dhai-novaassault-v3") {}
 	void ReadyToRun() override { (new GameWindow())->Show(); }
 };
