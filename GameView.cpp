@@ -1,7 +1,10 @@
 #include "GameView.h"
 
+#include <Application.h>
 #include <Bitmap.h>
+#include <Entry.h>
 #include <Message.h>
+#include <Path.h>
 #include <TranslationUtils.h>
 
 #include <cstdio>
@@ -19,8 +22,16 @@ GameView::GameView()
 	  fShipSprite(NULL)
 {
 	SetViewColor(3, 7, 24);
-	fShipSprite = BTranslationUtils::GetBitmapFile(
-		"assets_cc0/space_shooter_pack/spritesheets/ship.png");
+	// Resolve the asset relative to the executable, so launching by double-click works.
+	app_info appInfo;
+	if (be_app->GetAppInfo(&appInfo) == B_OK) {
+		BEntry executable(&appInfo.ref);
+		BPath assetPath(&executable);
+		assetPath.GetParent(&assetPath); // objects.x86_64-... folder
+		assetPath.GetParent(&assetPath); // NovaAssault project folder
+		assetPath.Append("assets_cc0/space_shooter_pack/spritesheets/ship.png");
+		fShipSprite = BTranslationUtils::GetBitmapFile(assetPath.Path());
+	}
 	srand((unsigned)time(NULL));
 	ResetGame();
 }
