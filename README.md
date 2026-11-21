@@ -1,31 +1,43 @@
-# Nova Assault — bản GameView "arcade shooter"
+# Nova Assault — bản "xịn" v2 (hiệu ứng nâng cấp)
 
-Thay thế 2 file trong project Haiku:
+## File
 
-- `GameView.h`
-- `GameView.cpp`
+| File | Dùng để |
+|---|---|
+| `GameView.h` / `GameView.cpp` | **v2** — parallax, particle, shake, combo, banner, HUD mới |
+| `main.cpp` | signature `v3` + nhịp 20ms (~50fps) |
+| `run_nova.sh` / `fix_launcher.sh` | chạy game / sửa launcher |
 
-## Cách làm trong VM Haiku
+## Cách áp dụng trong VM Haiku
 
 ```sh
 cd ~/NovaAssault
-cp GameView.h GameView.h.bak
-cp GameView.cpp GameView.cpp.bak
-# copy 2 file từ nova_patch vào đây, sau đó:
+cp /path/to/nova_patch/GameView.h ./GameView.h
+cp /path/to/nova_patch/GameView.cpp ./GameView.cpp
+cp /path/to/nova_patch/main.cpp ./main.cpp
 make
 ./objects.x86_64-cc13-release/NovaAssault
 ```
 
-## Thay đổi chính
+## Điểm mới ở v2
 
-- Fix lỗi build: `#include <Roster.h>` (definition của `app_info` nằm ở đây, `<Application.h>` chỉ forward-declare).
-- Dùng spritesheet CC0 có sẵn thay vì vẽ tay:
-  - `ship.png`: 5 frame 16x24, vẽ ở kích thước 36x52 (thay vì phóng 120x180 bị vỡ hạt).
-  - `enemy-small/medium/big.png`: 3 loại địch, hoạt hình theo frame.
-  - `explosion.png`: 5 frame nổ khi bắn hạ địch / trúng tàu.
-  - `laser-bolts.png`: laser player/enemy.
-  - `power-up.png`: item P (tăng sát thương) / S (khiên).
-- Nền: sao 3 lớp cuộn + vệt sáng + lưới phối cảnh + tinh vân.
-- HUD kiểu arcade: thanh trên, SCORE/LIVES/WAVE/POWER, SHIELD ACTIVE/OFFLINE, GAME OVER.
-- 18 địch chia 3 loại theo wave; địch bay quá đáy sẽ bị loại (fix bug wave không bao giờ sang).
-- Có muzzle/exhaust, flash khi trúng đạn, delay giữa các wave.
+### Hình ảnh
+- Nền gradient tự nhiên (-band) thay vì nền đen phẳng.
+- Layers mây/tinh vân CC0 trôi ngang + 3 lớp sao parallax có vệt đuôi theo tốc độ + lưới phối cảnh + vignette 2 bên.
+- Tàu: 5 frame sprite, **đuốc phản lực 3 lớp**, **bóng mờ (afterimage)** khi di chuyển nhanh, khiên hình vòng tròn nhấp nhô.
+- Địch: 3 loại sprite, hiệu ứng **xuất hiện dần**, đèn flash khi trúng đạn, thanh máu riêng cho boss.
+- Đạn laser: có **viền glow**, tia lửa bắn ra liên tục.
+- Item P/S: **pulse + vòng sáng** riêng theo màu.
+- Nổ: sprite 5 frame + **vòng sốc** loe dần + **tia lửa particle**.
+
+### Hiệu ứng / cảm giác chơi
+- **Rung màn hình** khi bắn hạ địch/trúng tàu (`PushState`/`SetOrigin`).
+- **Flash trắng** khi tàu bị bắn.
+- Hệ **combo**: `COMBO xN` + cộng điểm tăng dần, tự reset sau 2.5s.
+- **Banner `WAVE xx`** mỗi wave mới (fade in/out).
+- HUD arcade: tiêu đề có shadow+cyan, điểm số, **icon tàu làm biểu tượng mạng**, thanh SHIELD ACTIVE/OFFLINE, thanh máu boss.
+- Nhịp chạy 50fps (trước 33fps).
+
+## Giữ nguyên
+- Asset CC0 có sẵn trong repo (không copy asset bản quyền của game thương mại).
+- Fix `app_info` (`#include <Roster.h>`) và signature app `v3` (hết lỗi launcher `/boot/trash`).

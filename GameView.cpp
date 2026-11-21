@@ -29,6 +29,13 @@ GameView::GameView()
 	  fFireFrames(0),
 	  fSpawnFrames(0),
 	  fTick(0),
+	  fCombo(0),
+	  fComboTimer(0),
+	  fWaveBanner(0),
+	  fFlash(0),
+	  fShake(0),
+	  fShakeX(0),
+	  fShakeY(0),
 	  fGameOver(false),
 	  fShip(NULL),
 	  fEnemySmall(NULL),
@@ -36,9 +43,11 @@ GameView::GameView()
 	  fEnemyBig(NULL),
 	  fExplosion(NULL),
 	  fLaser(NULL),
-	  fPowerUp(NULL)
+	  fPowerUp(NULL),
+	  fClouds(NULL)
 {
 	SetViewColor(3, 7, 24);
+	for (int32 i = 0; i < kTrailCount; i++) fPrevX[i] = 350;
 	LoadSprites();
 	InitStars();
 	srand((unsigned)time(NULL));
@@ -54,11 +63,11 @@ GameView::~GameView()
 	delete fExplosion;
 	delete fLaser;
 	delete fPowerUp;
+	delete fClouds;
 }
 
 void GameView::LoadSprites()
 {
-	// Resolve assets relative to the executable: objects.* folder -> project folder.
 	app_info appInfo;
 	if (be_app == NULL || be_app->GetAppInfo(&appInfo) != B_OK)
 		return;
@@ -86,17 +95,23 @@ void GameView::LoadSprites()
 	fLaser = BTranslationUtils::GetBitmapFile(p.Path());
 	p = assets; p.Append("power-up.png");
 	fPowerUp = BTranslationUtils::GetBitmapFile(p.Path());
+
+	BPath backgrounds(path);
+	backgrounds.Append("assets_cc0/space_shooter_pack/backgrounds");
+	backgrounds.Append("clouds-transparent.png");
+	fClouds = BTranslationUtils::GetBitmapFile(backgrounds.Path());
 }
 
 void GameView::InitStars()
 {
 	for (int32 i = 0; i < kStarCount; i++) {
 		Star& star = fStars[i];
+		star.layer = i % 3;
 		star.x = rand() % 760;
 		star.y = rand() % 600;
-		star.speed = 0.4f + (rand() % 100) / 60.0f;
-		star.size = 1 + rand() % 2;
-		star.brightness = 110 + rand() % 145;
+		star.speed = 0.35f + star.layer * 1.15f + (rand() % 30) / 40.0f;
+		star.size = 1 + star.layer;
+		star.brightness = 100 + rand() % 155;
 	}
 }
 
@@ -108,6 +123,7 @@ void GameView::AttachedToWindow()
 void GameView::ResetGame()
 {
 	fPlayerX = fTargetX = 350;
+	for (int32 i = 0; i < kTrailCount; i++) fPrevX[i] = 350;
 	fScore = 0;
 	fLives = 3;
 	fWave = 0;
@@ -116,16 +132,23 @@ void GameView::ResetGame()
 	fFireFrames = 0;
 	fSpawnFrames = 0;
 	fTick = 0;
+	fCombo = 0;
+	fComboTimer = 0;
+	fWaveBanner = 0;
+	fFlash = 0;
+	fShake = 0;
 	fGameOver = false;
 	for (int32 i = 0; i < kBulletCount; i++) fBullets[i].active = false;
 	for (int32 i = 0; i < kItemCount; i++) fItems[i].active = false;
 	for (int32 i = 0; i < kExplosionCount; i++) fExplosions[i].active = false;
+	for (int32 i = 0; i < kParticleCount; i++) fParticles[i].life = 0;
 	StartWave();
 }
 
 void GameView::StartWave()
 {
 	fWave++;
+	fWaveBanner = 110;
 	for (int32 i = 0; i < kEnemyCount; i++) {
 		Enemy& enemy = fEnemies[i];
 		int32 row = i / 7;
@@ -135,6 +158,8 @@ void GameView::StartWave()
 		enemy.y = 104 + row * 66;
 		enemy.phase = col * .62f + row * 1.7f;
 		enemy.flash = 0;
+		enemy.entry = 12 + i * 2;
+		enemy.fireDelay = 60 + rand() % 180;
 
 		if (fWave >= 3 && i % 7 == 0)
 			enemy.kind = kEnemyBig;
@@ -150,14 +175,43 @@ void GameView::StartWave()
 	}
 }
 
+void GameView::Shake(float amount)
+{
+	if (amount > fShake) fShake = amount;
+}
+
+void GameView::SpawnParticles(float x, float y, int32 count,
+	int32 color, float speed, int32 size)
+{
+	for (int32 n = 0; n < count; n++) {
+		for (int32 i = 0; i < kParticleCount; i++) {
+			Particle& p = fParticles[i];
+			if (p.life > 0) continue;
+			float angle = ((float)rand() / RAND_MAX) * 6.28318f;
+			float velocity = speed * (0.35f + (rand() % 100) / 100.0f);
+			p.x = x;
+			p.y = y;
+			p.vx = cos(angle) * velocity;
+			p.vy = sin(angle) * velocity;
+			p.maxLife = 12 + rand() % 22;
+			p.life = p.maxLife;
+			p.size = size + rand() % 3;
+			p.color = color;
+			break;
+		}
+	}
+}
+
 void GameView::Draw(BRect)
 {
 	BRect bounds = Bounds();
 
 	SetDrawingMode(B_OP_COPY);
 	SetHighColor(3, 7, 24);
-	FillRect(bounds);
+	FillRect(BRect(-24, -24, bounds.right + 24, bounds.bottom + 24));
 
+	PushState();
+	SetOrigin(BPoint(fShakeX, fShakeY));
 	DrawBackground(bounds);
 
 	SetDrawingMode(B_OP_OVER);
@@ -167,15 +221,46 @@ void GameView::Draw(BRect)
 	DrawBullets();
 	DrawPlayer(bounds);
 	DrawExplosions();
-	SetDrawingMode(B_OP_COPY);
+	DrawParticles();
+	PopState();
+
+	if (fFlash > 0) {
+		SetDrawingMode(B_OP_OVER);
+		SetHighColor(255, 255, 255, fFlash * 3);
+		FillRect(bounds);
+		SetDrawingMode(B_OP_COPY);
+	}
 
 	DrawHud(bounds);
+	DrawWaveBanner(bounds);
 	if (fGameOver) DrawGameOver(bounds);
 }
 
 void GameView::DrawBackground(BRect b)
 {
-	// Nebula "planets" behind the starfield.
+	// Deep-space vertical gradient (banded, no per-pixel cost).
+	for (int32 y = 70; y < b.bottom; y += 10) {
+		float t = (y - 70) / (float)(b.bottom - 70);
+		int32 r = (int32)(5 + t * 14);
+		int32 g = (int32)(9 + t * 16);
+		int32 bl = (int32)(34 + t * 40);
+		SetHighColor(r, g, bl);
+		FillRect(BRect(-24, y, b.right + 24, y + 11));
+	}
+
+	// Drifting CC0 cloud layer used as nebula.
+	if (fClouds != NULL) {
+		int32 cw = 512, ch = 206;
+		int32 offset = (fTick / 3) % cw;
+		SetDrawingMode(B_OP_OVER);
+		for (int32 x = -cw - offset; x < b.right + cw; x += cw) {
+			DrawBitmap(fClouds, BRect(0, 0, 255, 102),
+				BRect(x, 96, x + cw, 96 + ch));
+		}
+		SetDrawingMode(B_OP_COPY);
+	}
+
+	// Colored nebula glows.
 	SetHighColor(20, 12, 62);
 	FillEllipse(BRect(-150, 130, 320, 610));
 	SetHighColor(48, 22, 118);
@@ -185,15 +270,19 @@ void GameView::DrawBackground(BRect b)
 	SetHighColor(58, 176, 220);
 	StrokeEllipse(BRect(490, 110, 950, 580));
 
-	// Parallax starfield with short motion streaks.
+	// Parallax stars with motion streaks.
 	for (int32 i = 0; i < kStarCount; i++) {
 		Star& star = fStars[i];
 		int32 v = star.brightness;
-		SetHighColor(v > 220 ? 255 : v,
-			v > 180 ? 250 : v,
-			255);
+		if (star.layer == 0)
+			SetHighColor(v / 2, v / 2, v);
+		else if (star.layer == 1)
+			SetHighColor(v / 2, v, 255);
+		else
+			SetHighColor(255, v, v);
+		int32 streak = star.layer * 3 + 1;
 		FillRect(BRect(star.x, star.y, star.x + star.size,
-			star.y + star.size + (int32)(star.speed * 2)));
+			star.y + star.size + streak));
 	}
 
 	// Perspective floor grid.
@@ -202,18 +291,27 @@ void GameView::DrawBackground(BRect b)
 		StrokeLine(BPoint(b.Width() / 2, 352), BPoint(x, b.bottom));
 	for (int32 y = 398; y < b.bottom - 18; y += 30)
 		StrokeLine(BPoint(0, y), BPoint(b.right, y));
+
+	// Side vignette.
+	SetHighColor(2, 5, 18);
+	FillRect(BRect(-24, 0, 12, b.bottom + 24));
+	FillRect(BRect(b.right - 12, 0, b.right + 24, b.bottom + 24));
 }
 
 void GameView::DrawHud(BRect b)
 {
-	SetHighColor(6, 14, 44);
-	FillRect(BRect(0, 0, b.right, 70));
-	SetHighColor(38, 196, 255);
-	StrokeLine(BPoint(0, 70), BPoint(b.right, 70));
+	SetHighColor(5, 12, 38);
+	FillRect(BRect(0, 0, b.right, 72));
+	SetHighColor(10, 24, 64);
+	FillRect(BRect(0, 58, b.right, 72));
+	SetHighColor(42, 200, 255);
+	StrokeLine(BPoint(0, 72), BPoint(b.right, 72));
+	SetHighColor(120, 60, 180);
+	StrokeLine(BPoint(0, 74), BPoint(b.right, 74));
 
 	SetFontSize(26);
-	SetHighColor(0, 0, 0);
-	DrawString("NOVA ASSAULT", BPoint(26, 43));
+	SetHighColor(30, 80, 140);
+	DrawString("NOVA ASSAULT", BPoint(27, 44));
 	SetHighColor(94, 236, 255);
 	DrawString("NOVA ASSAULT", BPoint(24, 41));
 
@@ -223,56 +321,107 @@ void GameView::DrawHud(BRect b)
 		BPoint(26, 60));
 
 	char stats[128];
-	snprintf(stats, sizeof(stats), "SCORE %06ld   LIVES %ld   WAVE %ld   POWER x%ld",
-		(long)fScore, (long)fLives, (long)fWave, (long)fPower);
+	snprintf(stats, sizeof(stats), "SCORE %06ld   WAVE %02ld   POWER x%ld",
+		(long)fScore, (long)fWave, (long)fPower);
 	SetHighColor(255, 222, 84);
 	SetFontSize(14);
-	DrawString(stats, BPoint(b.right - 340, 40));
+	DrawString(stats, BPoint(b.right - 350, 36));
 
-	if (fShieldFrames > 0)
+	// Lives as tiny ship icons.
+	if (fShip != NULL) {
+		for (int32 i = 0; i < fLives && i < 5; i++)
+			DrawBitmap(fShip, BRect(0, 0, 15, 23),
+				BRect(b.right - 350 + i * 22, 44,
+					b.right - 334 + i * 22, 68));
+	}
+
+	if (fShieldFrames > 0) {
 		SetHighColor(92, 255, 214);
-	else
-		SetHighColor(120, 140, 170);
-	SetFontSize(12);
-	DrawString(fShieldFrames > 0 ? "SHIELD ACTIVE" : "SHIELD OFFLINE",
-		BPoint(b.right - 340, 60));
+		SetFontSize(11);
+		DrawString("SHIELD ACTIVE", BPoint(b.right - 220, 65));
+	} else {
+		SetHighColor(110, 130, 165);
+		SetFontSize(11);
+		DrawString("SHIELD OFFLINE", BPoint(b.right - 220, 65));
+	}
+
+	if (fCombo > 1) {
+		char combo[32];
+		snprintf(combo, sizeof(combo), "COMBO x%ld", (long)fCombo);
+		SetFontSize(13);
+		SetHighColor(255, 140, 60);
+		DrawString(combo, BPoint(b.right - 110, 36));
+	}
+}
+
+void GameView::DrawWaveBanner(BRect b)
+{
+	if (fWaveBanner <= 0) return;
+	int32 alpha = fWaveBanner < 40 ? fWaveBanner * 6 : 240;
+	char text[32];
+	snprintf(text, sizeof(text), "WAVE %02ld", (long)fWave);
+
+	SetDrawingMode(B_OP_OVER);
+	SetFontSize(42);
+	SetHighColor(0, 0, 0, alpha / 2);
+	DrawString(text, BPoint(b.Width() / 2 - 78, 250));
+	SetHighColor(120, 245, 255, alpha);
+	DrawString(text, BPoint(b.Width() / 2 - 80, 248));
+	SetDrawingMode(B_OP_COPY);
 }
 
 void GameView::DrawPlayer(BRect b)
 {
-	float px = fPlayerX + 38;
 	float py = b.bottom - 96;
+	float px = fPlayerX + 38;
 
-	if (fShieldFrames > 0) {
-		SetHighColor(52, 180, 255, 180);
-		StrokeEllipse(BRect(px - 31, py - 37, px + 31, py + 37));
-		SetHighColor(150, 255, 240, 120);
-		StrokeEllipse(BRect(px - 25, py - 31, px + 25, py + 31));
+	// Engine exhaust: layered cones + sparks.
+	SetHighColor(255, 96, 24);
+	FillTriangle(BPoint(px - 11, py + 20), BPoint(px + 11, py + 20),
+		BPoint(px, py + 48 + (fTick % 8)));
+	SetHighColor(255, 186, 46);
+	FillTriangle(BPoint(px - 7, py + 20), BPoint(px + 7, py + 20),
+		BPoint(px, py + 38 + (fTick % 6)));
+	SetHighColor(255, 248, 190);
+	FillTriangle(BPoint(px - 3, py + 20), BPoint(px + 3, py + 20),
+		BPoint(px, py + 30 + (fTick % 4)));
+
+	// Afterimages behind fast movement.
+	if (fabs(fTargetX - fPlayerX) > 3) {
+		for (int32 i = kTrailCount - 1; i >= 1; i--) {
+			int32 alpha = 110 / (i + 1);
+			SetHighColor(90, 190, 255, alpha);
+			BRect r(fPrevX[i] + 38 - 18, py - 26,
+				fPrevX[i] + 38 + 18, py + 26);
+			FillEllipse(r);
+		}
 	}
 
-	// Engine glow / exhaust.
-	SetHighColor(255, 168, 42);
-	FillTriangle(BPoint(px - 8, py + 22), BPoint(px + 8, py + 22),
-		BPoint(px, py + 38 + (fTick % 6)));
-	SetHighColor(255, 236, 150);
-	FillTriangle(BPoint(px - 4, py + 22), BPoint(px + 4, py + 22),
-		BPoint(px, py + 31 + (fTick % 4)));
+	// Shield bubble with pulsing ring.
+	if (fShieldFrames > 0) {
+		int32 pulse = (fTick / 4) % 4;
+		SetHighColor(52, 180, 255, 150);
+		StrokeEllipse(BRect(px - 33 - pulse, py - 39 - pulse,
+			px + 33 + pulse, py + 39 + pulse));
+		SetHighColor(150, 255, 240, 100);
+		StrokeEllipse(BRect(px - 26, py - 32, px + 26, py + 32));
+	}
 
 	if (fShip != NULL) {
-		int32 frame = (fTick / 7) % 5;
+		int32 frame = (fTick / 5) % 5;
 		BRect src(frame * 16, 0, frame * 16 + 15, 23);
 		SetDrawingMode(B_OP_OVER);
-		DrawBitmap(fShip, src, BRect(px - 18, py - 26, px + 18, py + 26));
+		DrawBitmap(fShip, src,
+			BRect(px - 19, py - 27, px + 19, py + 27));
 		return;
 	}
 
-	// Vector fallback if sprites are missing.
 	SetHighColor(102, 45, 255);
-	FillTriangle(BPoint(px, py - 26), BPoint(px - 18, py + 22), BPoint(px + 18, py + 22));
+	FillTriangle(BPoint(px, py - 27), BPoint(px - 19, py + 24),
+		BPoint(px + 19, py + 24));
 	SetHighColor(224, 46, 84);
-	FillTriangle(BPoint(px, py - 22), BPoint(px - 13, py + 18), BPoint(px + 13, py + 18));
-	SetHighColor(247, 244, 255);
-	FillTriangle(BPoint(px, py - 16), BPoint(px - 6, py + 14), BPoint(px + 6, py + 14));
+	FillTriangle(BPoint(px, py - 22), BPoint(px - 13, py + 19),
+		BPoint(px + 13, py + 19));
 }
 
 void GameView::DrawEnemy(const Enemy& enemy, int32 index)
@@ -281,48 +430,39 @@ void GameView::DrawEnemy(const Enemy& enemy, int32 index)
 	float cy = enemy.y + 24;
 
 	BBitmap* sheet = NULL;
-	int32 cols = 2;
-	int32 fw = 16;
-	int32 fh = 16;
+	int32 cols = 2, fw = 16, fh = 16;
 	float scale = 2.0f;
 
 	switch (enemy.kind) {
 		case kEnemyMedium:
-			sheet = fEnemyMedium;
-			cols = 4;
-			scale = 2.4f;
-			break;
+			sheet = fEnemyMedium; cols = 4; scale = 2.5f; break;
 		case kEnemyBig:
-			sheet = fEnemyBig;
-			cols = 2;
-			fw = 32;
-			fh = 32;
-			scale = 2.2f;
-			break;
+			sheet = fEnemyBig; cols = 2; fw = 32; fh = 32; scale = 2.3f; break;
 		default:
-			sheet = fEnemySmall;
-			cols = 2;
-			break;
+			sheet = fEnemySmall; cols = 2; break;
 	}
 
-	if (sheet != NULL) {
-		int32 frame = (fTick / 6 + index) % cols;
+	if (sheet != NULL && enemy.entry <= 0) {
+		int32 frame = (fTick / 5 + index) % cols;
 		BRect src(frame * fw, 0, frame * fw + fw - 1, fh - 1);
 		float w = fw * scale / 2.0f;
 		float h = fh * scale / 2.0f;
 		SetDrawingMode(B_OP_OVER);
 		DrawBitmap(sheet, src, BRect(cx - w, cy - h, cx + w, cy + h));
-	} else {
-		SetHighColor(228, 64, 176);
-		FillTriangle(BPoint(cx, cy - 20), BPoint(cx - 18, cy + 18),
-			BPoint(cx + 18, cy + 18));
-		SetHighColor(97, 235, 255);
-		FillEllipse(BRect(cx - 7, cy - 6, cx + 7, cy + 8));
+	} else if (enemy.entry > 0) {
+		int32 alpha = 255 - enemy.entry * 18;
+		SetHighColor(120, 220, 255, alpha);
+		FillEllipse(BRect(cx - 18, cy - 18, cx + 18, cy + 18));
 	}
 
 	if (enemy.flash > 0) {
-		SetHighColor(255, 255, 255, 120);
-		FillEllipse(BRect(cx - 22, cy - 22, cx + 22, cy + 22));
+		SetHighColor(255, 255, 255, 150);
+		FillEllipse(BRect(cx - 24, cy - 24, cx + 24, cy + 24));
+	}
+
+	if (enemy.kind == kEnemyBig && enemy.hp > 1) {
+		SetHighColor(255, 90, 120);
+		FillRect(BRect(cx - 20, cy - 30, cx - 20 + enemy.hp * 5, cy - 27));
 	}
 }
 
@@ -332,19 +472,27 @@ void GameView::DrawBullets()
 		Bullet& bullet = fBullets[i];
 		if (!bullet.active) continue;
 
+		if (!bullet.enemy) {
+			SetHighColor(60, 200, 255, 60);
+			FillRect(BRect(bullet.x - 9, bullet.y - 18,
+				bullet.x + 9, bullet.y + 18));
+		} else {
+			SetHighColor(255, 70, 130, 60);
+			FillRect(BRect(bullet.x - 8, bullet.y - 16,
+				bullet.x + 8, bullet.y + 16));
+		}
+
 		if (fLaser != NULL) {
 			int32 x0 = bullet.enemy ? 16 : 0;
 			BRect src(x0, 16, x0 + 15, 31);
 			SetDrawingMode(B_OP_OVER);
-			DrawBitmap(fLaser, src, BRect(bullet.x - 6, bullet.y - 14,
-				bullet.x + 6, bullet.y + 14));
+			DrawBitmap(fLaser, src, BRect(bullet.x - 6, bullet.y - 15,
+				bullet.x + 6, bullet.y + 15));
 		} else {
-			if (bullet.enemy)
-				SetHighColor(255, 81, 125);
-			else
-				SetHighColor(67, 183, 255);
-			FillEllipse(BRect(bullet.x - 4, bullet.y - 9,
-				bullet.x + 4, bullet.y + 9));
+			SetHighColor(bullet.enemy ? 255 : 90,
+				bullet.enemy ? 90 : 210, bullet.enemy ? 140 : 255);
+			FillEllipse(BRect(bullet.x - 4, bullet.y - 10,
+				bullet.x + 4, bullet.y + 10));
 		}
 	}
 }
@@ -355,24 +503,31 @@ void GameView::DrawItems()
 		Item& item = fItems[i];
 		if (!item.active) continue;
 
+		int32 pulse = (item.phase / 4) % 3;
+		SetHighColor(item.type == kItemPower ? 255 : 70,
+			item.type == kItemPower ? 200 : 240,
+			item.type == kItemPower ? 60 : 210, 90);
+		FillEllipse(BRect(item.x - 20 - pulse, item.y - 20 - pulse,
+			item.x + 20 + pulse, item.y + 20 + pulse));
+
 		if (fPowerUp != NULL) {
-			int32 frame = item.type == kItemPower ? 0 : 2;
+			int32 frame = (item.type == kItemPower ? 0 : 2) +
+				((item.phase / 8) % 2);
 			BRect src((frame % 2) * 16, (frame / 2) * 16,
 				(frame % 2) * 16 + 15, (frame / 2) * 16 + 15);
 			SetDrawingMode(B_OP_OVER);
-			DrawBitmap(fPowerUp, src, BRect(item.x - 16, item.y - 16,
-				item.x + 16, item.y + 16));
+			DrawBitmap(fPowerUp, src, BRect(item.x - 17, item.y - 17,
+				item.x + 17, item.y + 17));
 		} else {
-			if (item.type == kItemPower)
-				SetHighColor(255, 200, 59);
-			else
-				SetHighColor(54, 243, 205);
+			SetHighColor(item.type == kItemPower ? 255 : 70,
+				item.type == kItemPower ? 200 : 240,
+				item.type == kItemPower ? 60 : 210);
 			FillEllipse(BRect(item.x - 15, item.y - 15,
 				item.x + 15, item.y + 15));
 		}
 
 		SetDrawingMode(B_OP_COPY);
-		SetHighColor(20, 24, 40);
+		SetHighColor(18, 22, 38);
 		SetFontSize(14);
 		DrawString(item.type == kItemPower ? "P" : "S",
 			BPoint(item.x - 4, item.y + 5));
@@ -386,33 +541,60 @@ void GameView::DrawExplosions()
 	for (int32 i = 0; i < kExplosionCount; i++) {
 		Explosion& boom = fExplosions[i];
 		if (!boom.active) continue;
+
 		BRect src(boom.frame * 16, 0, boom.frame * 16 + 15, 15);
 		DrawBitmap(fExplosion, src, BRect(boom.x - boom.size / 2,
 			boom.y - boom.size / 2, boom.x + boom.size / 2,
 			boom.y + boom.size / 2));
+
+		SetHighColor(255, 200, 120, 160 - boom.frame * 28);
+		StrokeEllipse(BRect(boom.x - boom.size / 2 - boom.frame * 4,
+			boom.y - boom.size / 2 - boom.frame * 4,
+			boom.x + boom.size / 2 + boom.frame * 4,
+			boom.y + boom.size / 2 + boom.frame * 4));
+	}
+}
+
+void GameView::DrawParticles()
+{
+	SetDrawingMode(B_OP_OVER);
+	for (int32 i = 0; i < kParticleCount; i++) {
+		Particle& p = fParticles[i];
+		if (p.life <= 0) continue;
+		int32 alpha = (int32)(255.0f * p.life / p.maxLife);
+		uint8 r = 255, g = 220, bl = 140;
+		switch (p.color) {
+			case 0: r = 255; g = 180; bl = 60; break;
+			case 1: r = 90; g = 220; bl = 255; break;
+			case 2: r = 255; g = 90; bl = 140; break;
+			case 3: r = 200; g = 255; bl = 170; break;
+		}
+		SetHighColor(r, g, bl, alpha);
+		FillRect(BRect(p.x - p.size, p.y - p.size,
+			p.x + p.size, p.y + p.size));
 	}
 }
 
 void GameView::DrawGameOver(BRect b)
 {
 	SetHighColor(8, 3, 24);
-	FillRect(BRect(0, 72, b.right, b.bottom));
+	FillRect(BRect(0, 74, b.right, b.bottom));
 
 	SetHighColor(126, 18, 52);
 	FillEllipse(BRect(-130, 118, 350, 600));
 	SetHighColor(255, 78, 62);
 	StrokeEllipse(BRect(-130, 118, 350, 600));
 
-	SetFontSize(36);
+	SetFontSize(40);
 	SetHighColor(0, 0, 0);
-	DrawString("GAME OVER", BPoint(b.Width() / 2 - 122, 268));
+	DrawString("GAME OVER", BPoint(b.Width() / 2 - 130, 272));
 	SetHighColor(255, 92, 118);
-	DrawString("GAME OVER", BPoint(b.Width() / 2 - 124, 266));
+	DrawString("GAME OVER", BPoint(b.Width() / 2 - 132, 270));
 
 	SetFontSize(15);
 	SetHighColor(230, 241, 255);
 	DrawString("Press R to restart the assault",
-		BPoint(b.Width() / 2 - 118, 300));
+		BPoint(b.Width() / 2 - 118, 304));
 }
 
 void GameView::KeyDown(const char* bytes, int32 count)
@@ -426,7 +608,6 @@ void GameView::KeyDown(const char* bytes, int32 count)
 		ResetGame();
 		return;
 	}
-
 	if (fTargetX < 32) fTargetX = 32;
 	if (fTargetX > Bounds().right - 115) fTargetX = Bounds().right - 115;
 }
@@ -447,10 +628,35 @@ void GameView::MessageReceived(BMessage* message)
 		BView::MessageReceived(message);
 }
 
+void GameView::UpdateParticles()
+{
+	for (int32 i = 0; i < kParticleCount; i++) {
+		Particle& p = fParticles[i];
+		if (p.life <= 0) continue;
+		p.x += p.vx;
+		p.y += p.vy;
+		p.vy += 0.035f;
+		p.vx *= 0.985f;
+		p.life--;
+	}
+}
+
 void GameView::UpdateGame()
 {
 	fTick++;
 	BRect bounds = Bounds();
+
+	// Screen shake + hit flash decay.
+	if (fShake > 0.4f) {
+		fShakeX = ((float)rand() / RAND_MAX - 0.5f) * fShake;
+		fShakeY = ((float)rand() / RAND_MAX - 0.5f) * fShake;
+		fShake *= 0.86f;
+	} else {
+		fShake = 0; fShakeX = 0; fShakeY = 0;
+	}
+	if (fFlash > 0) fFlash -= 4;
+	if (fComboTimer > 0 && --fComboTimer == 0) fCombo = 0;
+	if (fWaveBanner > 0) fWaveBanner--;
 
 	for (int32 i = 0; i < kStarCount; i++) {
 		Star& star = fStars[i];
@@ -460,6 +666,12 @@ void GameView::UpdateGame()
 			star.x = rand() % (int32)bounds.Width();
 		}
 	}
+
+	for (int32 i = kTrailCount - 1; i >= 1; i--)
+		fPrevX[i] = fPrevX[i - 1];
+	fPrevX[0] = fPlayerX;
+
+	UpdateParticles();
 
 	if (fGameOver) {
 		Invalidate();
@@ -480,22 +692,29 @@ void GameView::UpdateGame()
 		if (!enemy.alive) continue;
 		alive++;
 
+		if (enemy.entry > 0) {
+			enemy.entry--;
+			continue;
+		}
+
 		enemy.phase += .035f;
-		enemy.x = enemy.baseX + sin(enemy.phase) * 34;
+		enemy.x = enemy.baseX + sin(enemy.phase) * 36;
 		enemy.y += .028f + fWave * .005f;
 		if (enemy.flash > 0) enemy.flash--;
+		if (enemy.fireDelay > 0) enemy.fireDelay--;
+		else {
+			FireEnemy(enemy);
+			enemy.fireDelay = 110 + rand() % 170 - fWave * 4;
+			if (enemy.fireDelay < 55) enemy.fireDelay = 55;
+		}
 
-		// Enemies that fly past the bottom are gone (this also lets the
-		// next wave start even if the player misses a few).
 		if (enemy.y > bounds.bottom + 60)
 			enemy.alive = false;
-
-		if (rand() % 260 == 0) FireEnemy(enemy);
 	}
 
 	if (alive == 0) {
 		if (fSpawnFrames == 0)
-			fSpawnFrames = 55;
+			fSpawnFrames = 60;
 		else if (--fSpawnFrames == 0)
 			StartWave();
 	} else {
@@ -507,28 +726,37 @@ void GameView::UpdateGame()
 		if (!bullet.active) continue;
 
 		bullet.y += bullet.dy;
-		if (bullet.y < 72 || bullet.y > bounds.bottom) {
+		if (bullet.y < 74 || bullet.y > bounds.bottom) {
 			bullet.active = false;
 			continue;
 		}
 
+		if (!bullet.enemy && fTick % 3 == 0)
+			SpawnParticles(bullet.x, bullet.y + 12, 1, 1, 0.4f, 1);
+
 		if (!bullet.enemy) {
 			for (int32 e = 0; e < kEnemyCount; e++) {
 				Enemy& enemy = fEnemies[e];
-				if (!enemy.alive) continue;
+				if (!enemy.alive || enemy.entry > 0) continue;
 				float radius = enemy.kind == kEnemyBig ? 34 :
 					(enemy.kind == kEnemyMedium ? 22 : 16);
 				if (Hits(bullet.x, bullet.y, 6, enemy.x + 25,
 					enemy.y + 24, radius)) {
 					bullet.active = false;
 					enemy.flash = 3;
+					SpawnParticles(bullet.x, bullet.y, 3, 1, 1.6f, 2);
 					if (--enemy.hp <= 0) {
 						enemy.alive = false;
 						int32 gain = enemy.kind == kEnemyBig ? 300 :
 							(enemy.kind == kEnemyMedium ? 200 : 100);
-						fScore += gain;
+						fCombo++;
+						fComboTimer = 150;
+						fScore += gain + (fCombo - 1) * 20;
 						SpawnExplosion(enemy.x + 25, enemy.y + 24,
-							enemy.kind == kEnemyBig ? 74 : 50);
+							enemy.kind == kEnemyBig ? 78 : 52);
+						SpawnParticles(enemy.x + 25, enemy.y + 24,
+							enemy.kind == kEnemyBig ? 18 : 10, 0, 2.6f, 3);
+						Shake(enemy.kind == kEnemyBig ? 6 : 2.5f);
 						if (rand() % 4 == 0)
 							SpawnItem(enemy.x + 25, enemy.y + 24);
 					}
@@ -538,12 +766,20 @@ void GameView::UpdateGame()
 		} else if (Hits(bullet.x, bullet.y, 7, fPlayerX + 38,
 			bounds.bottom - 96, 28)) {
 			bullet.active = false;
+			SpawnParticles(bullet.x, bullet.y, 6, 2, 2.0f, 2);
 			if (fShieldFrames == 0) {
-				SpawnExplosion(fPlayerX + 38, bounds.bottom - 96, 66);
+				SpawnExplosion(fPlayerX + 38, bounds.bottom - 96, 70);
+				SpawnParticles(fPlayerX + 38, bounds.bottom - 96,
+					16, 2, 3.0f, 3);
+				Shake(9);
+				fFlash = 26;
+				fCombo = 0;
 				if (--fLives <= 0)
 					fGameOver = true;
 				else
-					fShieldFrames = 90;
+					fShieldFrames = 100;
+			} else {
+				SpawnParticles(bullet.x, bullet.y, 8, 3, 2.2f, 2);
 			}
 		}
 	}
@@ -552,16 +788,18 @@ void GameView::UpdateGame()
 		Item& item = fItems[i];
 		if (!item.active) continue;
 
+		item.phase++;
 		item.y += 1.6f;
 		if (item.y > bounds.bottom) {
 			item.active = false;
 			continue;
 		}
-		if (Hits(item.x, item.y, 16, fPlayerX + 38,
+		if (Hits(item.x, item.y, 17, fPlayerX + 38,
 			bounds.bottom - 96, 30)) {
 			if (item.type == kItemPower && fPower < 3) fPower++;
 			if (item.type == kItemShield) fShieldFrames = 240;
 			fScore += 50;
+			SpawnParticles(item.x, item.y, 14, 3, 2.4f, 3);
 			item.active = false;
 		}
 	}
@@ -582,14 +820,15 @@ void GameView::FirePlayer()
 			if (fBullets[i].active) continue;
 			fBullets[i].x = fPlayerX + 38 +
 				(n - (fPower - 1) / 2.0f) * 20;
-			fBullets[i].y = Bounds().bottom - 132;
+			fBullets[i].y = Bounds().bottom - 134;
 			fBullets[i].dy = -13;
 			fBullets[i].enemy = false;
 			fBullets[i].active = true;
 			break;
 		}
 	}
-	fFireFrames = fPower >= 3 ? 12 : 16;
+	SpawnParticles(fPlayerX + 38, Bounds().bottom - 118, 2, 1, 1.4f, 2);
+	fFireFrames = fPower >= 3 ? 11 : 15;
 }
 
 void GameView::FireEnemy(Enemy& enemy)
@@ -612,6 +851,7 @@ void GameView::SpawnItem(float x, float y)
 		fItems[i].x = x;
 		fItems[i].y = y;
 		fItems[i].type = rand() % 2;
+		fItems[i].phase = 0;
 		fItems[i].active = true;
 		break;
 	}
