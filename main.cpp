@@ -16,7 +16,8 @@ public:
 	{
 		fGame = new GameView();
 		AddChild(fGame);
-		fRunner = new BMessageRunner(BMessenger(fGame), new BMessage(MSG_FRAME), 30000);
+		fRunner = new BMessageRunner(BMessenger(fGame),
+			new BMessage(MSG_FRAME), 30000);
 	}
 	~GameWindow() { delete fRunner; }
 private:
@@ -26,7 +27,8 @@ private:
 
 class NovaAssaultApp : public BApplication {
 public:
-	NovaAssaultApp() : BApplication("application/x-vnd.dhai-novaassault-v2") {}
+	// v3: trÃ¡nh Ä‘á»¥ng entry registrar cÅ© trá» tá»›i /boot/trash/NovaAssault
+	NovaAssaultApp() : BApplication("application/x-vnd.dhai-novaassault-v3") {}
 	void ReadyToRun() override { (new GameWindow())->Show(); }
 };
 
