@@ -472,14 +472,21 @@ void GameView::DrawBullets()
 		Bullet& bullet = fBullets[i];
 		if (!bullet.active) continue;
 
+		// Vầng sáng tròn (không còn ô chữ nhật) + lõi sáng rõ nét.
 		if (!bullet.enemy) {
-			SetHighColor(60, 200, 255, 60);
-			FillRect(BRect(bullet.x - 9, bullet.y - 18,
-				bullet.x + 9, bullet.y + 18));
+			SetHighColor(40, 150, 255, 35);
+			FillEllipse(BRect(bullet.x - 12, bullet.y - 22,
+				bullet.x + 12, bullet.y + 22));
+			SetHighColor(90, 230, 255, 70);
+			FillEllipse(BRect(bullet.x - 7, bullet.y - 17,
+				bullet.x + 7, bullet.y + 17));
 		} else {
-			SetHighColor(255, 70, 130, 60);
-			FillRect(BRect(bullet.x - 8, bullet.y - 16,
-				bullet.x + 8, bullet.y + 16));
+			SetHighColor(255, 50, 110, 35);
+			FillEllipse(BRect(bullet.x - 11, bullet.y - 20,
+				bullet.x + 11, bullet.y + 20));
+			SetHighColor(255, 120, 170, 70);
+			FillEllipse(BRect(bullet.x - 6, bullet.y - 15,
+				bullet.x + 6, bullet.y + 15));
 		}
 
 		if (fLaser != NULL) {
@@ -494,6 +501,11 @@ void GameView::DrawBullets()
 			FillEllipse(BRect(bullet.x - 4, bullet.y - 10,
 				bullet.x + 4, bullet.y + 10));
 		}
+
+		// Lõi trắng sáng để nhìn rõ trên mọi nền.
+		SetHighColor(255, 255, 255, 205);
+		FillEllipse(BRect(bullet.x - 2, bullet.y - 8,
+			bullet.x + 2, bullet.y + 8));
 	}
 }
 
