@@ -30,8 +30,10 @@ GameView::GameView()
 	  fSpawnFrames(0),
 	  fTick(0),
 	  fCombo(0),
+	  fBestCombo(0),
 	  fComboTimer(0),
 	  fWaveBanner(0),
+	  fGameOverTick(0),
 	  fFlash(0),
 	  fShake(0),
 	  fShakeX(0),
@@ -133,8 +135,10 @@ void GameView::ResetGame()
 	fSpawnFrames = 0;
 	fTick = 0;
 	fCombo = 0;
+	fBestCombo = 0;
 	fComboTimer = 0;
 	fWaveBanner = 0;
+	fGameOverTick = 0;
 	fFlash = 0;
 	fShake = 0;
 	fGameOver = false;
@@ -589,24 +593,83 @@ void GameView::DrawParticles()
 
 void GameView::DrawGameOver(BRect b)
 {
-	SetHighColor(8, 3, 24);
-	FillRect(BRect(0, 74, b.right, b.bottom));
+	int32 t = fGameOverTick;
+	int32 fade = t < 18 ? t * 14 : 250;
+	if (fade > 250) fade = 250;
 
-	SetHighColor(126, 18, 52);
-	FillEllipse(BRect(-130, 118, 350, 600));
-	SetHighColor(255, 78, 62);
-	StrokeEllipse(BRect(-130, 118, 350, 600));
+	SetDrawingMode(B_OP_OVER);
 
-	SetFontSize(40);
-	SetHighColor(0, 0, 0);
-	DrawString("GAME OVER", BPoint(b.Width() / 2 - 130, 272));
-	SetHighColor(255, 92, 118);
-	DrawString("GAME OVER", BPoint(b.Width() / 2 - 132, 270));
+	// Màn hình tối dần + quầng đỏ.
+	SetHighColor(3, 2, 12, 190);
+	FillRect(b);
+	SetHighColor(105, 12, 36, 90);
+	FillEllipse(BRect(-170, 120, 380, 640));
+	SetHighColor(150, 20, 55, 70);
+	FillEllipse(BRect(400, 100, 940, 600));
 
-	SetFontSize(15);
-	SetHighColor(230, 241, 255);
-	DrawString("Press R to restart the assault",
-		BPoint(b.Width() / 2 - 118, 304));
+	// Panel thông số chính giữa.
+	BRect panel(168, 168, 592, 432);
+	SetHighColor(9, 12, 32, 235);
+	FillRect(panel);
+	SetHighColor(210, 60, 95, 210);
+	StrokeRect(panel);
+
+	SetHighColor(255, 110, 140, 235);
+	StrokeLine(BPoint(panel.left, panel.top + 22), BPoint(panel.left, panel.top));
+	StrokeLine(BPoint(panel.left, panel.top), BPoint(panel.left + 22, panel.top));
+	StrokeLine(BPoint(panel.right - 22, panel.bottom), BPoint(panel.right, panel.bottom));
+	StrokeLine(BPoint(panel.right, panel.bottom), BPoint(panel.right, panel.bottom - 22));
+
+	// Tiêu đề có 3 lớp phát sáng.
+	const char* title = "GAME OVER";
+	SetFontSize(44);
+	SetHighColor(120, 0, 28, fade);
+	DrawString(title, BPoint(b.Width() / 2 - 128, 232));
+	SetHighColor(255, 86, 112, fade);
+	DrawString(title, BPoint(b.Width() / 2 - 130, 230));
+	SetHighColor(255, 230, 235, fade);
+	DrawString(title, BPoint(b.Width() / 2 - 132, 228));
+
+	SetHighColor(255, 96, 126, 170);
+	StrokeLine(BPoint(208, 254), BPoint(552, 254));
+
+	char line[64];
+	SetFontSize(13);
+	SetHighColor(160, 195, 230, fade);
+	DrawString("FINAL SCORE", BPoint(210, 286));
+	DrawString("WAVE REACHED", BPoint(400, 286));
+
+	SetFontSize(22);
+	SetHighColor(255, 220, 84, fade);
+	snprintf(line, sizeof(line), "%06ld", (long)fScore);
+	DrawString(line, BPoint(210, 312));
+	SetHighColor(110, 235, 255, fade);
+	snprintf(line, sizeof(line), "%02ld", (long)fWave);
+	DrawString(line, BPoint(400, 312));
+
+	SetFontSize(13);
+	SetHighColor(160, 195, 230, fade);
+	DrawString("BEST COMBO", BPoint(210, 346));
+	SetHighColor(255, 150, 80, fade);
+	snprintf(line, sizeof(line), "x%ld", (long)fBestCombo);
+	DrawString(line, BPoint(400, 346));
+
+	// Nhắc restart nhấp nháy + ô phím R.
+	int32 pulse = 120 + (int32)(120 * (0.5 + 0.5 * sin(t * 0.11)));
+	SetFontSize(17);
+	SetHighColor(190, 245, 255, pulse);
+	DrawString("PRESS R TO RESTART", BPoint(b.Width() / 2 - 116, 398));
+
+	BRect key(b.Width() / 2 + 92, 382, b.Width() / 2 + 116, 406);
+	SetHighColor(30, 52, 82, 235);
+	FillRect(key);
+	SetHighColor(190, 245, 255, 235);
+	StrokeRect(key);
+	SetFontSize(14);
+	SetHighColor(255, 255, 255, pulse);
+	DrawString("R", BPoint(b.Width() / 2 + 100, 402));
+
+	SetDrawingMode(B_OP_COPY);
 }
 
 void GameView::KeyDown(const char* bytes, int32 count)
@@ -694,6 +757,7 @@ void GameView::UpdateGame()
 	UpdateParticles();
 
 	if (fGameOver) {
+		fGameOverTick++;
 		Invalidate();
 		return;
 	}
@@ -770,6 +834,7 @@ void GameView::UpdateGame()
 						int32 gain = enemy.kind == kEnemyBig ? 300 :
 							(enemy.kind == kEnemyMedium ? 200 : 100);
 						fCombo++;
+						if (fCombo > fBestCombo) fBestCombo = fCombo;
 						fComboTimer = 150;
 						fScore += gain + (fCombo - 1) * 20;
 						SpawnExplosion(enemy.x + 25, enemy.y + 24,
@@ -794,10 +859,16 @@ void GameView::UpdateGame()
 				Shake(9);
 				fFlash = 26;
 				fCombo = 0;
-				if (--fLives <= 0)
+				if (--fLives <= 0) {
 					fGameOver = true;
-				else
+					fGameOverTick = 0;
+					SpawnParticles(fPlayerX + 38,
+						bounds.bottom - 96, 30, 2, 3.5f, 4);
+					Shake(12);
+					fFlash = 40;
+				} else {
 					fShieldFrames = 100;
+				}
 			} else {
 				SpawnParticles(bullet.x, bullet.y, 8, 3, 2.2f, 2);
 			}

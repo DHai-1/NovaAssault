@@ -118,8 +118,10 @@ private:
 	int32						fSpawnFrames;
 	int32						fTick;
 	int32						fCombo;
+	int32						fBestCombo;
 	int32						fComboTimer;
 	int32						fWaveBanner;
+	int32						fGameOverTick;
 	int32						fFlash;
 	float						fShake;
 	float						fShakeX;
