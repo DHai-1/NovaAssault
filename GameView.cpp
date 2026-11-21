@@ -317,7 +317,7 @@ void GameView::DrawHud(BRect b)
 
 	SetFontSize(11);
 	SetHighColor(150, 210, 245);
-	DrawString("A/D OR CLICK: STEER    AUTO-FIRE ONLINE    R: RESTART",
+	DrawString("A/D OR MOVE MOUSE: STEER    AUTO-FIRE ONLINE    R: RESTART",
 		BPoint(26, 60));
 
 	char stats[128];
@@ -618,6 +618,14 @@ void GameView::MouseDown(BPoint point)
 	if (fTargetX < 32) fTargetX = 32;
 	if (fTargetX > Bounds().right - 115) fTargetX = Bounds().right - 115;
 	MakeFocus(true);
+}
+
+void GameView::MouseMoved(BPoint point, uint32 transit, const BMessage*)
+{
+	if (transit == B_EXITED_VIEW) return;
+	fTargetX = point.x - 38;
+	if (fTargetX < 32) fTargetX = 32;
+	if (fTargetX > Bounds().right - 115) fTargetX = Bounds().right - 115;
 }
 
 void GameView::MessageReceived(BMessage* message)

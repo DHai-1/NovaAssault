@@ -65,6 +65,8 @@ public:
 	virtual void				Draw(BRect update);
 	virtual void				KeyDown(const char* bytes, int32 count);
 	virtual void				MouseDown(BPoint point);
+	virtual void				MouseMoved(BPoint point, uint32 transit,
+									const BMessage* message);
 	virtual void				MessageReceived(BMessage* message);
 
 private:
