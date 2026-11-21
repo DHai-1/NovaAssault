@@ -6,18 +6,18 @@
 class BBitmap;
 
 const int32 kEnemyCount = 18;
-const int32 kBulletCount = 80;
+const int32 kBulletCount = 140;
 const int32 kItemCount = 8;
-const int32 kExplosionCount = 24;
-const int32 kParticleCount = 180;
+const int32 kExplosionCount = 28;
+const int32 kParticleCount = 220;
 const int32 kStarCount = 170;
 const int32 kTrailCount = 10;
 
 enum enemy_kind { kEnemySmall = 0, kEnemyMedium = 1, kEnemyBig = 2 };
-enum item_type { kItemPower = 0, kItemShield = 1 };
+enum item_type { kItemPower = 0, kItemShield = 1, kItemFan = 2 };
 
 struct Bullet {
-	float x, y, dy;
+	float x, y, dx, dy;
 	bool enemy;
 	bool active;
 };
@@ -29,6 +29,13 @@ struct Enemy {
 	int32 flash;
 	int32 entry;
 	int32 fireDelay;
+	bool alive;
+};
+
+struct Boss {
+	float x, y, baseX, phase;
+	int32 hp, maxHp;
+	int32 flash, fireTimer, entry, volley;
 	bool alive;
 };
 
@@ -77,9 +84,14 @@ private:
 	void						UpdateGame();
 	void						UpdateParticles();
 
+	void						AddBullet(float x, float y, float dx,
+									float dy, bool enemy);
 	void						FirePlayer();
 	void						FireEnemy(Enemy& enemy);
-	void						SpawnItem(float x, float y);
+	void						FireBoss();
+	void						DamageBoss(int32 amount, float x, float y);
+	void						SpawnItem(float x, float y,
+									int32 forcedType = -1);
 	void						SpawnExplosion(float x, float y, int32 size);
 	void						SpawnParticles(float x, float y, int32 count,
 									int32 color, float speed, int32 size);
@@ -88,6 +100,8 @@ private:
 	void						DrawBackground(BRect bounds);
 	void						DrawHud(BRect bounds);
 	void						DrawWaveBanner(BRect bounds);
+	void						DrawBoss();
+	void						DrawBossHealth(BRect bounds);
 	void						DrawPlayer(BRect bounds);
 	void						DrawEnemy(const Enemy& enemy, int32 index);
 	void						DrawBullets();
@@ -100,6 +114,7 @@ private:
 									float bx, float by, float br) const;
 
 	Enemy						fEnemies[kEnemyCount];
+	Boss						fBoss;
 	Bullet						fBullets[kBulletCount];
 	Item						fItems[kItemCount];
 	Explosion					fExplosions[kExplosionCount];
@@ -114,6 +129,7 @@ private:
 	int32						fWave;
 	int32						fPower;
 	int32						fShieldFrames;
+	int32						fFanFrames;
 	int32						fFireFrames;
 	int32						fSpawnFrames;
 	int32						fTick;
@@ -127,6 +143,8 @@ private:
 	float						fShakeX;
 	float						fShakeY;
 	bool						fGameOver;
+	bool						fBossActive;
+	bool						fSoundOn;
 
 	BBitmap*					fShip;
 	BBitmap*					fEnemySmall;
