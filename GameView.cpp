@@ -5,6 +5,7 @@
 #include <Entry.h>
 #include <Message.h>
 #include <Path.h>
+#include <Roster.h>
 #include <TranslationUtils.h>
 
 #include <cstdio>
