@@ -26,7 +26,7 @@ private:
 
 class NovaAssaultApp : public BApplication {
 public:
-	NovaAssaultApp() : BApplication("application/x-vnd.nova-assault") {}
+	NovaAssaultApp() : BApplication("application/x-vnd.dhai-novaassault-v2") {}
 	void ReadyToRun() override { (new GameWindow())->Show(); }
 };
 
